@@ -7,6 +7,7 @@ namespace EventBus
     public class SubscribeAttribute : Attribute
     {
         public ThreadMode ThreadMode { get; set; } = ThreadMode.Post;
+        public bool Stack { get; set; }
     }
 
     /// <summary>
@@ -46,6 +47,7 @@ namespace EventBus
     {
         public ThreadMode ThreadMode { get; set; }
         public Type ParameterType { get; set; }
+        public bool Stack { get; set; }
 
         public static Description FromMethodInfo(MethodInfo methodInfo)
         {
@@ -53,16 +55,18 @@ namespace EventBus
             return new Description
             {
                 ThreadMode = attribute.ThreadMode,
-                ParameterType = methodInfo.GetParameters()[0].ParameterType
+                ParameterType = methodInfo.GetParameters()[0].ParameterType,
+                Stack = attribute.Stack
             };
         }
 
-        public static Description FromGeneric<T>(ThreadMode threadMode)
+        public static Description FromGeneric<T>(ThreadMode threadMode, bool stack)
         {
             return new Description
             {
                 ThreadMode = threadMode,
-                ParameterType = typeof(T)
+                ParameterType = typeof(T),
+                Stack = stack
             };
         }
     }

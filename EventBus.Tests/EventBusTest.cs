@@ -1,5 +1,7 @@
 ﻿using NUnit.Framework;
 using System;
+using System.Collections.Generic;
+using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -354,6 +356,41 @@ namespace EventBus.Tests
                     }
                 }
             }
+        }
+
+        [Test]
+        public void subscriber_can_receive_from_stack_message_if_it_intents()
+        {
+            var eventBus = new EventBus();
+            Message message = null;
+            eventBus.Post(new Message { Content = "helloworld" }, true);
+            eventBus.Register<Message>(msg => { message = msg; }, true);
+            Assert.NotNull(message);
+            Assert.AreEqual(message.Content, "helloworld");
+        }
+
+        [Test]
+        public void subscriber_cannot_receive_from_stack_message_if_it_doesnt_intents()
+        {
+            var eventBus = new EventBus();
+            Message message = null;
+            eventBus.Post(new Message { Content = "helloworld" }, true);
+            eventBus.Register<Message>(msg => { message = msg; }, false);
+            Assert.Null(message);
+        }
+
+        [Test]
+        public void stacked_message_will_be_removed_after_passed_to_subscriber()
+        {
+            var eventBus = new EventBus();
+            Message message = null;
+            eventBus.Post(new Message { Content = "helloworld" }, true);
+            eventBus.Register<Message>(msg => { message = msg; }, true);
+            Assert.NotNull(message);
+            Assert.AreEqual(message.Content, "helloworld");
+
+            var messages = (IList<object>)eventBus.GetType().GetField("_messageStacked", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(eventBus);
+            Assert.Zero(messages.Count);
         }
 
         private class Container

@@ -20,6 +20,8 @@ namespace EventBus
         /// </summary>
         private readonly Dictionary<Type, IList<Subscriber>> _subscriberList;
 
+        private readonly IList<object> _messageStacked;
+
         private IThreadHelper _threadHelper;
 
         /// <summary>
@@ -89,36 +91,42 @@ namespace EventBus
         /// The <see cref="Action{T}"/> will be called when the incomming message is reached.
         /// The message data will be passed to the argument of <see cref="subscriberAction"/>.
         /// </param>
-        public void Register<T>(Action<T> subscriberAction)
-        {
-            Precondition.ArgumentNotNull(subscriberAction, nameof(subscriberAction));
-            Register(subscriberAction, ThreadMode.Post);
-        }
-
-        /// <summary>
-        /// Register a <see cref="Action{T}"/> to listen to an incomming message.
-        /// You should keep the instance of the <see cref="Action{T}"/> to unregister
-        /// later if you need.
-        /// </summary>
-        /// <typeparam name="T">
-        /// Type of incomming message which wants to receive.
-        /// </typeparam>
-        /// <param name="subscriberAction">
-        /// The <see cref="Action{T}"/> will be called when the incomming message is reached.
-        /// The message data will be passed to the argument of <see cref="subscriberAction"/>.
-        /// </param>
         /// <param name="threadMode">
         /// Configure thead mode, see <see cref="ThreadMode"/> for more detail.
         /// </param>
-        public void Register<T>(Action<T> subscriberAction, ThreadMode threadMode)
+        /// <param name="stack">
+        /// If it's true, it itents to receive stacked messages.
+        /// </param>
+        public void Register<T>(Action<T> subscriberAction, ThreadMode threadMode, bool stack)
         {
             Precondition.ArgumentNotNull(subscriberAction, nameof(subscriberAction));
 
             lock (_subscriberList)
             {
-                var subscriber = new AnonymousSubscriber<T>(subscriberAction, threadMode, _threadHelper);
+                var subscriber = new AnonymousSubscriber<T>(subscriberAction, threadMode, stack, _threadHelper);
                 RegisterSubscriber(subscriber);
             }
+        }
+
+        /// <seealso cref="Register{T}(Action{T}, ThreadMode, bool)"/>
+        public void Register<T>(Action<T> subscriberAction, ThreadMode threadMode)
+        {
+            Precondition.ArgumentNotNull(subscriberAction, nameof(subscriberAction));
+            Register(subscriberAction, threadMode, false);
+        }
+
+        /// <seealso cref="Register{T}(Action{T}, ThreadMode, bool)"/>
+        public void Register<T>(Action<T> subscriberAction, bool stack)
+        {
+            Precondition.ArgumentNotNull(subscriberAction, nameof(subscriberAction));
+            Register(subscriberAction, ThreadMode.Post, stack);
+        }
+
+        /// <seealso cref="Register{T}(Action{T}, ThreadMode, bool)"/>
+        public void Register<T>(Action<T> subscriberAction)
+        {
+            Precondition.ArgumentNotNull(subscriberAction, nameof(subscriberAction));
+            Register(subscriberAction, ThreadMode.Post, false);
         }
 
         /// <summary>
@@ -158,16 +166,26 @@ namespace EventBus
                 }
             }
         }
-        
+
         /// <summary>
         /// Broadcast the message to subscribers.
         /// </summary>
         /// <param name="message">
         /// Message data that will be broadcasted.
         /// </param>
-        public void Post(object message)
+        /// <param name="stack">
+        /// If the subscribers don't have compatible types it will be stacked in a list.
+        /// After that, if there are any subscriber that is registered,
+        /// have a compatible type with this message and intents to receive
+        /// stacked messages, this message and the others that have a compatible type
+        /// in stacked list will be passed to those subscribers. By default, the message
+        /// will be ignored if don't have any subscribers which have compatible types.
+        /// </param>
+        public void Post(object message, bool stack = false)
         {
             Precondition.ArgumentNotNull(message, nameof(message));
+
+            var consumed = false;
 
             lock (_subscriberList)
             {
@@ -177,8 +195,16 @@ namespace EventBus
                     foreach (var subscriber in node.Value)
                     {
                         subscriber.Execute(message);
+                        consumed = true;
                     }
                 }
+            }
+
+            if (consumed || !stack) return;
+
+            lock (_messageStacked)
+            {
+                _messageStacked.Add(message);
             }
         }
 
@@ -192,6 +218,20 @@ namespace EventBus
             }
 
             _subscriberList.Add(subscriber.Description.ParameterType, new List<Subscriber>(new[] { subscriber }));
+
+            if (!subscriber.Description.Stack) return;
+
+            lock (_messageStacked)
+            {
+                for (var i = 0; i < _messageStacked.Count; i++)
+                {
+                    var message = _messageStacked[i];
+                    if (!subscriber.Description.ParameterType.IsInstanceOfType(message)) continue;
+
+                    _messageStacked.RemoveAt(i--);
+                    subscriber.Execute(message);
+                }
+            }
         }
 
         private IList<Subscriber> CollectSubscribers(object container)
@@ -214,6 +254,7 @@ namespace EventBus
         public EventBus()
         {
             _subscriberList = new Dictionary<Type, IList<Subscriber>>();
+            _messageStacked = new List<object>();
             _threadHelper = new DefaultThreadHelper();
         }
     }

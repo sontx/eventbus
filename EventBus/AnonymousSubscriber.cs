@@ -7,8 +7,9 @@ namespace EventBus
         public AnonymousSubscriber(
             Action<T> action,
             ThreadMode threadMode,
+            bool stack,
             IThreadHelper threadHelper)
-            : base(Description.FromGeneric<T>(threadMode), action, threadHelper)
+            : base(Description.FromGeneric<T>(threadMode, stack), action, threadHelper)
         {
         }
 
